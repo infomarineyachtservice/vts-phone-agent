@@ -1,0 +1,38 @@
+{
+  "name": "vts-phone-agent",
+  "version": "1.0.0",
+  "description": "AI Phone Agent for VTS Marine - Handle incoming calls with AI routing and live dashboard",
+  "main": "phone-agent-backend.js",
+  "scripts": {
+    "start": "node phone-agent-backend.js",
+    "dev": "nodemon phone-agent-backend.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "twilio",
+    "phone",
+    "ai",
+    "claude",
+    "voice",
+    "agent",
+    "yacht",
+    "marine"
+  ],
+  "author": "VTS Marine",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "twilio": "^4.10.1",
+    "@anthropic-ai/sdk": "^0.20.0",
+    "cors": "^2.8.5",
+    "sqlite3": "^5.1.6",
+    "ws": "^8.14.2",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
