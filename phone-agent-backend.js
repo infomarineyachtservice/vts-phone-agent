@@ -220,6 +220,8 @@ When booking: get their name, date/time preference.
 When ordering parts: get part name and quantity.`;
 
     console.log(`🤖 Calling Claude...`);
+    console.log(`   API Key present: ${process.env.ANTHROPIC_API_KEY ? 'YES' : 'NO'}`);
+    console.log(`   API Key length: ${process.env.ANTHROPIC_API_KEY?.length || 0}`);
 
     // Call Claude
     const response = await client.messages.create({
@@ -230,6 +232,9 @@ When ordering parts: get part name and quantity.`;
         ...conversationHistory,
         { role: 'user', content: speechResult || 'Hello' },
       ],
+    }).catch(err => {
+      console.error(`   Full error:`, JSON.stringify(err, null, 2));
+      throw err;
     });
 
     if (!response.content[0] || response.content[0].type !== 'text') {
