@@ -1,5 +1,4 @@
-claude-3-5-sonnet-20241022  claude-sonnet-5const express = require('express');
-const twilio = require('twilio');
+const express = require('express');const twilio = require('twilio');
 const Anthropic = require('@anthropic-ai/sdk');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
@@ -224,8 +223,9 @@ When ordering parts: get part name and quantity.`;
     console.log(`   API Key length: ${process.env.ANTHROPIC_API_KEY?.length || 0}`);
 
     // Call Claude
-    const response = await client.messages.create({'claude-3-5-sonnet-20241022' 'claude-sonnet-5'      model: 'claude-3-5-sonnet-20241022',
- claude-sonnet-5     max_tokens: 100,
+    const response = await client.messages.create({
+        model: 'claude-sonnet-5',
+        max_tokens: 100,
       system: systemPrompt,
       messages: [
         ...conversationHistory,
