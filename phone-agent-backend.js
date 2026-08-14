@@ -158,9 +158,10 @@ app.post('/call/incoming', (req, res) => {
   // Gather speech and send to AI
   const twiml = new twilio.twiml.VoiceResponse();
   twiml.say('Hi! Welcome to VTS Marine. How can I help you today?');
+  const railwayUrl = process.env.RAILWAY_URL || 'https://vts-phone-agent-production.up.railway.app';
   twiml.gather({
     numDigits: 0,
-    action: `/call/ai?CallSid=${callSid}&From=${from}`,
+    action: `${railwayUrl}/call/ai?CallSid=${callSid}&From=${from}`,
     method: 'POST',
     timeout: 10,
     speechTimeout: 'auto',
@@ -266,11 +267,12 @@ When ordering parts: get part name and quantity.`;
     });
 
     // Continue conversation or end
+    const railwayUrl = process.env.RAILWAY_URL || 'https://vts-phone-agent-production.up.railway.app';
     const twiml = new twilio.twiml.VoiceResponse();
     twiml.say(aiResponse);
     twiml.gather({
       numDigits: 0,
-      action: `/call/ai?CallSid=${CallSid}&From=${From}`,
+      action: `${railwayUrl}/call/ai?CallSid=${CallSid}&From=${From}`,
       method: 'POST',
       timeout: 5,
       speechTimeout: 'auto',
