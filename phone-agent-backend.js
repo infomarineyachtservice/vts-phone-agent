@@ -10,12 +10,11 @@ require('dotenv').config();
 
 const app = express();
 
-// Check env vars on startup
+// Check env vars
 const requiredEnvVars = [
   'TWILIO_ACCOUNT_SID',
   'TWILIO_AUTH_TOKEN',
   'TWILIO_PHONE_1',
-  'TWILIO_PHONE_2',
   'OPERATOR_PHONE',
   'ANTHROPIC_API_KEY'
 ];
@@ -30,7 +29,6 @@ for (const varName of requiredEnvVars) {
   }
 }
 
-// Initialize clients only if configured
 let twilioClient = null;
 let client = null;
 
@@ -42,16 +40,9 @@ if (isConfigured) {
   console.log('✅ All environment variables configured');
 } else {
   console.warn('⚠️  Missing environment variables:', missingVars);
-  console.warn('Server will start but webhooks will not process calls.');
-  console.warn('Add these variables in Railway dashboard and restart.');
 }
 
-// Twilio config
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_PHONE_1 = process.env.TWILIO_PHONE_1 || '+16043518525';
-const TWILIO_PHONE_2 = process.env.TWILIO_PHONE_2 || '+17785486246';
-const OPERATOR_PHONE = process.env.OPERATOR_PHONE || '+16043518525';
+const OPERATOR_PHONE = process.env.OPERATOR_PHONE || '+19387863205';
 
 // SQLite database
 const db = new sqlite3.Database(':memory:');
@@ -63,8 +54,6 @@ db.serialize(() => {
       from_number TEXT,
       to_number TEXT,
       status TEXT,
-      handled_by TEXT,
-      transcript TEXT,
       created_at DATETIME,
       ended_at DATETIME
     )
@@ -82,7 +71,7 @@ db.serialize(() => {
   `);
 });
 
-// WebSocket for real-time updates
+// WebSocket
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
@@ -91,7 +80,6 @@ const connections = new Set();
 wss.on('connection', (ws) => {
   console.log('Dashboard connected');
   
-  // Send current config status
   ws.send(JSON.stringify({
     type: 'config_status',
     isConfigured: isConfigured,
@@ -126,7 +114,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Status endpoint
 app.get('/api/status', (req, res) => {
   res.json({
     isConfigured: isConfigured,
@@ -137,11 +124,11 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// Incoming call webhook from Twilio
+// Incoming call - start conversation with AI directly
 app.post('/call/incoming', (req, res) => {
   if (!isConfigured) {
     const twiml = new twilio.twiml.VoiceResponse();
-    twiml.say('System is not configured. Please add environment variables.');
+    twiml.say('System is not configured.');
     res.type('text/xml');
     res.send(twiml.toString());
     return;
@@ -151,12 +138,12 @@ app.post('/call/incoming', (req, res) => {
   const from = req.body.From;
   const to = req.body.To;
 
-  console.log(`Incoming call: ${from} -> ${to}`);
+  console.log(`📞 Incoming call: ${from}`);
 
-  // Store call in DB
+  // Store call
   db.run(
-    'INSERT INTO calls (id, from_number, to_number, status, handled_by, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [callSid, from, to, 'incoming', 'pending', new Date().toISOString()]
+    'INSERT INTO calls (id, from_number, to_number, status, created_at) VALUES (?, ?, ?, ?, ?)',
+    [callSid, from, to, 'active', new Date().toISOString()]
   );
 
   // Notify dashboard
@@ -168,66 +155,23 @@ app.post('/call/incoming', (req, res) => {
     timestamp: new Date().toISOString(),
   });
 
-  // Start gathering input
+  // Gather speech and send to AI
   const twiml = new twilio.twiml.VoiceResponse();
+  twiml.say('Hi! Welcome to VTS Marine. How can I help you today?');
   twiml.gather({
-    numDigits: 1,
-    action: `/call/route?CallSid=${callSid}&From=${from}`,
+    numDigits: 0,
+    action: `/call/ai?CallSid=${callSid}&From=${from}`,
     method: 'POST',
-  }).say('Press 1 to connect with support, or wait for automated assistance.');
+    timeout: 10,
+    speechTimeout: 'auto',
+    language: 'en-US',
+  }).say('Please tell me how I can assist you.');
 
   res.type('text/xml');
   res.send(twiml.toString());
 });
 
-// Call routing endpoint
-app.post('/call/route', (req, res) => {
-  if (!isConfigured) {
-    const twiml = new twilio.twiml.VoiceResponse();
-    twiml.say('System is not configured.');
-    res.type('text/xml');
-    res.send(twiml.toString());
-    return;
-  }
-
-  const { CallSid, From } = req.query;
-  const digits = req.body.Digits;
-
-  const twiml = new twilio.twiml.VoiceResponse();
-
-  if (digits === '1') {
-    // Operator pressed 1 - route to human
-    broadcast({
-      type: 'call_routed',
-      call_id: CallSid,
-      routed_to: 'human',
-      timestamp: new Date().toISOString(),
-    });
-
-    db.run('UPDATE calls SET handled_by = ? WHERE id = ?', ['human', CallSid]);
-
-    twiml.say('Connecting you to an agent.');
-    twiml.dial(OPERATOR_PHONE, { timeout: 30 });
-  } else {
-    // No input or timeout - route to AI
-    broadcast({
-      type: 'call_routed',
-      call_id: CallSid,
-      routed_to: 'ai',
-      timestamp: new Date().toISOString(),
-    });
-
-    db.run('UPDATE calls SET handled_by = ? WHERE id = ?', ['ai', CallSid]);
-
-    twiml.say('Connecting you to our service assistant.');
-    twiml.redirect(`/call/ai?CallSid=${CallSid}&From=${From}`);
-  }
-
-  res.type('text/xml');
-  res.send(twiml.toString());
-});
-
-// AI conversation endpoint
+// AI conversation
 app.post('/call/ai', async (req, res) => {
   if (!isConfigured) {
     const twiml = new twilio.twiml.VoiceResponse();
@@ -238,17 +182,16 @@ app.post('/call/ai', async (req, res) => {
   }
 
   const { CallSid, From } = req.query;
-  const speechResult = req.body.SpeechResult || '';
+  const speechResult = req.body.SpeechResult || req.body.Digits || '';
 
-  console.log(`AI Input (${CallSid}): ${speechResult}`);
+  console.log(`🎤 Input (${CallSid}): "${speechResult}"`);
 
   try {
-    // Check if Claude client is initialized
     if (!client) {
-      throw new Error('Anthropic API not configured. Check ANTHROPIC_API_KEY env var.');
+      throw new Error('Anthropic client not initialized');
     }
 
-    // Get call history
+    // Get conversation history
     const messages = await new Promise((resolve) => {
       db.all(
         'SELECT role, content FROM messages WHERE call_id = ? ORDER BY created_at',
@@ -262,26 +205,25 @@ app.post('/call/ai', async (req, res) => {
       content: m.content,
     }));
 
-    // Build system prompt
-    const systemPrompt = `You are a helpful AI assistant for VTS Marine Yacht Service. You handle:
+    // System prompt
+    const systemPrompt = `You are a helpful AI assistant for VTS Marine Yacht Service.
+
+You help with:
 - Service bookings (maintenance, repairs, detailing)
 - Parts orders (marine equipment, supplies)
-- Repair help & troubleshooting (answer technical questions)
+- Repair help & troubleshooting
 - General customer support
 
-Keep responses SHORT (1-2 sentences max) and conversational. Ask clarifying questions if needed.
-When booking: get name, email, phone, date/time preference.
-When ordering parts: get part name, quantity, delivery address.
-When giving advice: be helpful and clear.
+Keep responses SHORT (1-2 sentences). Be conversational.
+When booking: get their name, date/time preference.
+When ordering parts: get part name and quantity.`;
 
-If the customer asks something outside your scope, offer to transfer them to a human agent.`;
-
-    console.log(`Calling Claude API for ${CallSid}...`);
+    console.log(`🤖 Calling Claude...`);
 
     // Call Claude
     const response = await client.messages.create({
       model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 150,
+      max_tokens: 100,
       system: systemPrompt,
       messages: [
         ...conversationHistory,
@@ -289,12 +231,12 @@ If the customer asks something outside your scope, offer to transfer them to a h
       ],
     });
 
-    if (!response.content[0] || !response.content[0].text) {
-      throw new Error('Invalid Claude API response');
+    if (!response.content[0] || response.content[0].type !== 'text') {
+      throw new Error('Invalid Claude response');
     }
 
     const aiResponse = response.content[0].text;
-    console.log(`Claude response (${CallSid}): ${aiResponse}`);
+    console.log(`✅ Claude: "${aiResponse}"`);
 
     // Store messages
     const now = new Date().toISOString();
@@ -314,7 +256,7 @@ If the customer asks something outside your scope, offer to transfer them to a h
       now,
     ]);
 
-    // Broadcast to dashboard
+    // Broadcast
     broadcast({
       type: 'ai_message',
       call_id: CallSid,
@@ -323,32 +265,38 @@ If the customer asks something outside your scope, offer to transfer them to a h
       timestamp: now,
     });
 
-    // Respond with TwiML
+    // Continue conversation or end
     const twiml = new twilio.twiml.VoiceResponse();
     twiml.say(aiResponse);
     twiml.gather({
-      numDigits: 1,
+      numDigits: 0,
       action: `/call/ai?CallSid=${CallSid}&From=${From}`,
       method: 'POST',
       timeout: 5,
-    }).say('You can continue, or press 1 to end the call.');
+      speechTimeout: 'auto',
+      language: 'en-US',
+    }).say('You can continue, or say goodbye to end the call.');
 
     res.type('text/xml');
     res.send(twiml.toString());
+
   } catch (err) {
-    console.error(`AI Error (${CallSid}):`, err.message, err.stack);
+    console.error(`❌ Error (${CallSid}):`, err.message);
+    
+    // Fallback - Fixed typo here!
     const twiml = new twilio.twiml.VoiceResponse();
-    twiml.say('Sorry, there was an issue. Transferring you to an agent.');
-    twiml.dial(OPERATOR_PHONE);
+    twiml.say('Sorry, there was an issue. Goodbye.');
+    twiml.hangup();
+    
     res.type('text/xml');
     res.send(twiml.toString());
   }
 });
 
-// Call ended webhook
+// Call ended
 app.post('/call/ended', (req, res) => {
   const callSid = req.body.CallSid;
-  console.log(`Call ended: ${callSid}`);
+  console.log(`📞 Call ended: ${callSid}`);
 
   db.run(
     'UPDATE calls SET status = ?, ended_at = ? WHERE id = ?',
@@ -364,17 +312,15 @@ app.post('/call/ended', (req, res) => {
   res.send('OK');
 });
 
-// API: Get all calls
+// API endpoints
 app.get('/api/calls', (req, res) => {
   db.all('SELECT * FROM calls ORDER BY created_at DESC', (err, rows) => {
     res.json(rows || []);
   });
 });
 
-// API: Get call details with messages
 app.get('/api/calls/:id', (req, res) => {
   const callId = req.params.id;
-
   db.get('SELECT * FROM calls WHERE id = ?', [callId], (err, call) => {
     db.all(
       'SELECT * FROM messages WHERE call_id = ? ORDER BY created_at',
