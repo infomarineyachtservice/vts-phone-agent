@@ -160,8 +160,7 @@ app.post('/call/incoming', (req, res) => {
   twiml.say('Hi! Welcome to VTS Marine. How can I help you today?');
   const railwayUrl = process.env.RAILWAY_URL || 'https://vts-phone-agent-production.up.railway.app';
   twiml.gather({
-    numDigits: 0,
-    action: `${railwayUrl}/call/ai?CallSid=${callSid}&From=${from}`,
+        action: `${railwayUrl}/call/ai?CallSid=${callSid}&From=${from}`,
     method: 'POST',
     timeout: 10,
     speechTimeout: 'auto',
@@ -237,11 +236,13 @@ When ordering parts: get part name and quantity.`;
       throw err;
     });
 
-    if (!response.content[0] || response.content[0].type !== 'text') {
-      throw new Error('Invalid Claude response');
-    }
+const textBlock = response.content.find((block) => block.type === 'text');
 
-    const aiResponse = response.content[0].text;
+if (!textBlock) {
+  throw new Error('Invalid Claude response');
+}
+
+    const aiResponse = textBlock.text;
     console.log(`✅ Claude: "${aiResponse}"`);
 
     // Store messages
@@ -276,8 +277,7 @@ When ordering parts: get part name and quantity.`;
     const twiml = new twilio.twiml.VoiceResponse();
     twiml.say(aiResponse);
     twiml.gather({
-      numDigits: 0,
-      action: `${railwayUrl}/call/ai?CallSid=${CallSid}&From=${From}`,
+action: `${railwayUrl}/call/ai?CallSid=${CallSid}&From=${From}`,
       method: 'POST',
       timeout: 5,
       speechTimeout: 'auto',
